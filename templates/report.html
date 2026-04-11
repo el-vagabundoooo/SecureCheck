@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SecureCheck Report</title>
+    <style>
+        :root {
+            --bg: #0f0f0f;
+            --card: #1a1a1a;
+            --border: #2a2a2a;
+            --red: #c0392b;
+            --red-light: #fdf0f0;
+            --yellow: #f39c12;
+            --yellow-light: #fefdf0;
+            --green: #27ae60;
+            --green-light: #f0fdf4;
+            --blue: #2980b9;
+            --blue-light: #f0f8ff;
+            --text: #f5f5f5;
+            --muted: #a0a0a0;
+            --white: #ffffff;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background: #f4f4f4;
+            color: #222;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        .header {
+            background: #0f0f0f;
+            color: #f5f5f5;
+            padding: 2.5rem 3rem;
+            border-bottom: 4px solid #c0392b;
+        }
+        .header-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+        .header h1 {
+            font-size: 2rem;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+        }
+        .header h1 span { color: #c0392b; }
+        .header p {
+            color: #a0a0a0;
+            margin-top: 0.25rem;
+            font-size: 0.875rem;
+        }
+        .header-meta {
+            text-align: right;
+            font-size: 0.8rem;
+            color: #888;
+        }
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 2rem 1.5rem;
+        }
+        .kpi-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        .kpi-card {
+            background: white;
+            border: 1px solid #ddd;
+            border-top: 4px solid #c0392b;
+            padding: 1.25rem;
+            border-radius: 2px;
+        }
+        .kpi-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #c0392b;
+            line-height: 1;
+        }
+        .kpi-label {
+            font-size: 0.75rem;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-top: 0.35rem;
+        }
+        .section {
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 2px;
+            margin-bottom: 1.5rem;
+            overflow: hidden;
+        }
+        .section-header {
+            background: #1a1a1a;
+            color: #f5f5f5;
+            padding: 0.875rem 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .section-header h2 {
+            font-size: 0.95rem;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+        .section-body { padding: 1.5rem; }
+        .finding {
+            display: flex;
+            align-items: flex-start;
+            gap: 1rem;
+            padding: 0.875rem 1rem;
+            margin-bottom: 0.75rem;
+            border-radius: 2px;
+            border-left: 4px solid transparent;
+        }
+        .finding-HIGH {
+            background: #fdf0f0;
+            border-left-color: #c0392b;
+        }
+        .finding-MEDIUM {
+            background: #fefdf0;
+            border-left-color: #f39c12;
+        }
+        .finding-LOW {
+            background: #f0fdf4;
+            border-left-color: #27ae60;
+        }
+        .finding-INFO {
+            background: #f0f8ff;
+            border-left-color: #2980b9;
+        }
+        .badge {
+            font-size: 0.65rem;
+            font-weight: 700;
+            padding: 0.2rem 0.5rem;
+            border-radius: 2px;
+            white-space: nowrap;
+            letter-spacing: 0.5px;
+            flex-shrink: 0;
+            margin-top: 0.15rem;
+        }
+        .badge-HIGH   { background: #c0392b; color: white; }
+        .badge-MEDIUM { background: #f39c12; color: white; }
+        .badge-LOW    { background: #27ae60; color: white; }
+        .badge-INFO   { background: #2980b9; color: white; }
+        .finding-text h4 {
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: #111;
+            margin-bottom: 0.2rem;
+        }
+        .finding-text p {
+            font-size: 0.825rem;
+            color: #555;
+            line-height: 1.5;
+        }
+        .system-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 0.75rem;
+        }
+        .sys-item {
+            background: #f8f8f8;
+            border: 1px solid #eee;
+            padding: 0.75rem 1rem;
+        }
+        .sys-label {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #888;
+            margin-bottom: 0.25rem;
+        }
+        .sys-value {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: #111;
+            font-family: monospace;
+        }
+        .score-block {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+            padding: 1.25rem;
+            background: #f8f8f8;
+            border: 1px solid #eee;
+            margin-bottom: 1.5rem;
+        }
+        .score-circle {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            border: 4px solid #c0392b;
+            flex-shrink: 0;
+        }
+        .score-num {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #c0392b;
+            line-height: 1;
+        }
+        .score-denom {
+            font-size: 0.65rem;
+            color: #888;
+        }
+        .score-info h3 {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #111;
+        }
+        .score-info p {
+            font-size: 0.85rem;
+            color: #555;
+            margin-top: 0.25rem;
+        }
+        .email-meta {
+            background: #f8f8f8;
+            border: 1px solid #eee;
+            padding: 1rem 1.25rem;
+            margin-bottom: 1.5rem;
+            font-family: monospace;
+            font-size: 0.85rem;
+        }
+        .email-meta div { margin-bottom: 0.25rem; }
+        .email-meta span { color: #888; }
+        .footer {
+            background: #1a1a1a;
+            color: #666;
+            text-align: center;
+            padding: 1.5rem;
+            font-size: 0.78rem;
+            margin-top: 2rem;
+            border-top: 2px solid #c0392b;
+        }
+        .tag {
+            font-size: 0.7rem;
+            font-weight: 600;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            color: #c0392b;
+            margin-bottom: 0.5rem;
+        }
+        .no-findings {
+            text-align: center;
+            color: #27ae60;
+            padding: 2rem;
+            font-size: 0.95rem;
+        }
+        @media print {
+            body { background: white; }
+            .header { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <div class="header-top">
+            <div>
+                <h1>Secure<span>Check</span></h1>
+                <p>Personal Security Audit & Phishing Analysis Report</p>
+            </div>
+            <div class="header-meta">
+                <div>Generated: {{ generated_at }}</div>
+                {% if has_audit %}
+                <div>Host: {{ audit.system_info.hostname }}</div>
+                <div>IP: {{ audit.system_info.local_ip }}</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+
+        <!-- ── KPI SUMMARY ─────────────────────────────────────── -->
+        <div class="kpi-row">
+            {% if has_audit %}
+            <div class="kpi-card">
+                <div class="kpi-value">{{ audit.summary.total }}</div>
+                <div class="kpi-label">Total Audit Findings</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-value" style="color:#c0392b">{{ audit.summary.high }}</div>
+                <div class="kpi-label">High Risk Findings</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-value" style="color:#f39c12">{{ audit.summary.medium }}</div>
+                <div class="kpi-label">Medium Risk Findings</div>
+            </div>
+            {% endif %}
+            {% if has_phishing %}
+            <div class="kpi-card">
+                <div class="kpi-value" style="color:#c0392b">{{ phishing.score }}/100</div>
+                <div class="kpi-label">Phishing Risk Score</div>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- ── SECURITY AUDIT ──────────────────────────────────── -->
+        {% if has_audit %}
+        <div class="section">
+            <div class="section-header">
+                <h2>🔒 Security Audit — {{ audit.system_info.hostname }}</h2>
+                <span style="font-size:0.8rem;color:#888">
+                    {{ audit.system_info.os }} {{ audit.system_info.os_version }}
+                    · {{ audit.system_info.scan_time }}
+                </span>
+            </div>
+            <div class="section-body">
+                <div class="tag">System Information</div>
+                <div class="system-grid" style="margin-bottom:1.5rem">
+                    <div class="sys-item">
+                        <div class="sys-label">Hostname</div>
+                        <div class="sys-value">{{ audit.system_info.hostname }}</div>
+                    </div>
+                    <div class="sys-item">
+                        <div class="sys-label">Local IP</div>
+                        <div class="sys-value">{{ audit.system_info.local_ip }}</div>
+                    </div>
+                    <div class="sys-item">
+                        <div class="sys-label">Operating System</div>
+                        <div class="sys-value">{{ audit.system_info.os }} {{ audit.system_info.os_version }}</div>
+                    </div>
+                    <div class="sys-item">
+                        <div class="sys-label">Architecture</div>
+                        <div class="sys-value">{{ audit.system_info.architecture }}</div>
+                    </div>
+                </div>
+
+                <div class="tag">Port & Network Findings</div>
+                {% if audit.port_findings %}
+                    {% for f in audit.port_findings %}
+                    <div class="finding finding-{{ f.risk }}">
+                        <span class="badge badge-{{ f.risk }}">{{ f.risk }}</span>
+                        <div class="finding-text">
+                            <h4>{{ f.detail }}</h4>
+                            <p>{{ f.explanation }}</p>
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="no-findings">✅ No open ports detected in scanned range</div>
+                {% endif %}
+
+                <div class="tag" style="margin-top:1.5rem">Firewall & SMB Checks</div>
+                {% for f in audit.smb_findings + audit.firewall_findings %}
+                <div class="finding finding-{{ f.risk }}">
+                    <span class="badge badge-{{ f.risk }}">{{ f.risk }}</span>
+                    <div class="finding-text">
+                        <h4>{{ f.check }}</h4>
+                        <p>{{ f.explanation }}</p>
+                    </div>
+                </div>
+                {% endfor %}
+
+                {% if audit.wifi_findings %}
+                <div class="tag" style="margin-top:1.5rem">Wi-Fi Network Checks</div>
+                {% for f in audit.wifi_findings %}
+                <div class="finding finding-{{ f.risk }}">
+                    <span class="badge badge-{{ f.risk }}">{{ f.risk }}</span>
+                    <div class="finding-text">
+                        <h4>{{ f.check }}</h4>
+                        <p>{{ f.explanation }}</p>
+                    </div>
+                </div>
+                {% endfor %}
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- ── PHISHING ANALYSIS ───────────────────────────────── -->
+        {% if has_phishing %}
+        <div class="section">
+            <div class="section-header">
+                <h2>🎣 Phishing Email Analysis</h2>
+                <span style="font-size:0.8rem;color:#888">{{ phishing.risk_label }}</span>
+            </div>
+            <div class="section-body">
+
+                <div class="score-block">
+                    <div class="score-circle">
+                        <div class="score-num">{{ phishing.score }}</div>
+                        <div class="score-denom">/ 100</div>
+                    </div>
+                    <div class="score-info">
+                        <h3>{{ phishing.risk_label }}</h3>
+                        <p>
+                            {{ phishing.high_count }} high-risk indicator(s) detected ·
+                            {{ phishing.medium_count }} medium-risk indicator(s) detected
+                        </p>
+                        <p style="margin-top:0.25rem;font-size:0.8rem;color:#888">
+                            Score: 0–25 Low · 26–50 Moderate · 51–75 High · 76–100 Critical
+                        </p>
+                    </div>
+                </div>
+
+                <div class="email-meta">
+                    <div><span>From: </span>{{ phishing.from }}</div>
+                    <div><span>Subject: </span>{{ phishing.subject }}</div>
+                    <div><span>Date: </span>{{ phishing.date }}</div>
+                </div>
+
+                <div class="tag">Analysis Findings</div>
+                {% if phishing.findings %}
+                    {% for f in phishing.findings %}
+                    <div class="finding finding-{{ f.risk }}">
+                        <span class="badge badge-{{ f.risk }}">{{ f.risk }}</span>
+                        <div class="finding-text">
+                            <h4>{{ f.check }}</h4>
+                            <p>{{ f.explanation }}</p>
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="no-findings">✅ No phishing indicators detected</div>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+
+    </div>
+
+    <div class="footer">
+        SecureCheck · Personal Security Audit & Phishing Analyzer · Juan Lacia · 2026<br>
+        <span style="color:#444">For educational and personal use only.
+        Run audits only on systems and networks you own or have permission to test.</span>
+    </div>
+
+</body>
+</html>
