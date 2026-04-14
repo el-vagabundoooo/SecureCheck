@@ -361,6 +361,19 @@
                 </div>
                 {% endfor %}
 
+                {% if audit.hibp_findings %}
+                <div class="tag" style="margin-top:1.5rem">HaveIBeenPwned Checks</div>
+                {% for f in audit.hibp_findings %}
+                <div class="finding finding-{{ f.risk }}">
+                    <span class="badge badge-{{ f.risk }}">{{ f.risk }}</span>
+                    <div class="finding-text">
+                        <h4>{{ f.check }}</h4>
+                        <p>{{ f.explanation }}</p>
+                    </div>
+                </div>
+                {% endfor %}
+                {% endif %}
+
                 {% if audit.wifi_findings %}
                 <div class="tag" style="margin-top:1.5rem">Wi-Fi Network Checks</div>
                 {% for f in audit.wifi_findings %}

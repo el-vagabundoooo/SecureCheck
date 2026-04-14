@@ -293,6 +293,127 @@ def check_url(url, findings):
     except Exception as e:
         print(f"{Fore.YELLOW}    [WARN] URL analysis error: {e}{Style.RESET_ALL}")
 
+def check_virustotal(url, api_key):
+    """
+    Submits a URL to VirusTotal for community-sourced
+    malware and phishing analysis.
+
+    VirusTotal API v3 workflow:
+    1. POST the URL to /urls endpoint — returns an analysis ID
+    2. GET /analyses/{id} — returns the scan results
+
+    The URL must be base64-encoded (URL-safe, no padding)
+    for the GET request. This is a VirusTotal API requirement
+    to safely encode URLs that contain special characters.
+
+    Response structure:
+      data.attributes.stats contains:
+        malicious   — engines that flagged as malicious
+        suspicious  — engines that flagged as suspicious
+        harmless    — engines that cleared it
+        undetected  — engines with no verdict
+
+    Rate limit on free tier: 4 requests/minute, 500/day.
+    We handle 429 (rate limit) gracefully.
+    """
+    import base64
+    if not api_key or api_key == "YOUR_KEY_HERE":
+        return None
+
+    findings = []
+    headers = {
+        "x-apikey":     api_key,
+        "Accept":       "application/json",
+        "Content-Type": "application/x-www-form-urlencoded",
+    }
+    try:
+        # Step 1 — Submit URL
+        resp = requests.post(
+            "https://www.virustotal.com/api/v3/urls",
+            headers=headers,
+            data=f"url={requests.utils.quote(url, safe='')}",
+            timeout=10
+        )
+        if resp.status_code == 429:
+            findings.append({
+                "check":       "VirusTotal Rate Limited",
+                "risk":        INFO,
+                "explanation": "VirusTotal rate limit reached (4 req/min free tier). Wait 60 seconds.",
+            })
+            return findings
+
+        if resp.status_code not in (200, 201):
+            return findings
+
+        analysis_id = resp.json().get("data", {}).get("id", "")
+        if not analysis_id:
+            return findings
+
+        # Step 2 — Get results
+        import time
+        time.sleep(3)  # Brief wait for analysis to complete
+        result_resp = requests.get(
+            f"https://www.virustotal.com/api/v3/analyses/{analysis_id}",
+            headers=headers,
+            timeout=10
+        )
+        if result_resp.status_code != 200:
+            return findings
+
+        stats = result_resp.json().get(
+            "data", {}).get("attributes", {}).get("stats", {})
+        malicious  = stats.get("malicious", 0)
+        suspicious = stats.get("suspicious", 0)
+        harmless   = stats.get("harmless", 0)
+        total      = malicious + suspicious + harmless + stats.get("undetected", 0)
+
+        if malicious > 0:
+            findings.append({
+                "check":       f"VirusTotal: MALICIOUS URL",
+                "risk":        HIGH,
+                "explanation": f"{malicious}/{total} security vendors flagged this URL as malicious. Do not visit.",
+            })
+            print_finding(HIGH, f"VirusTotal: {malicious}/{total} engines — MALICIOUS")
+        elif suspicious > 0:
+            findings.append({
+                "check":       f"VirusTotal: Suspicious URL",
+                "risk":        MEDIUM,
+                "explanation": f"{suspicious}/{total} security vendors flagged this URL as suspicious.",
+            })
+            print_finding(MEDIUM, f"VirusTotal: {suspicious}/{total} engines — suspicious")
+        else:
+            findings.append({
+                "check":       f"VirusTotal: Clean URL",
+                "risk":        INFO,
+                "explanation": f"0/{total} security vendors flagged this URL. Appears clean.",
+            })
+            print_finding(INFO, f"VirusTotal: 0/{total} engines — clean")
+
+    except Exception as e:
+        findings.append({
+            "check":       "VirusTotal Check Failed",
+            "risk":        INFO,
+            "explanation": f"VirusTotal check failed: {e}",
+        })
+    return findings
+
+
+def check_cert_for_url(url):
+    """
+    Wrapper that extracts the hostname from a URL
+    and calls the HTTPS certificate validator.
+    Imports from audit.py to avoid code duplication.
+    """
+    try:
+        from modules.audit import check_https_certificate
+        parsed   = urlparse(url)
+        hostname = parsed.netloc.replace("www.", "")
+        if hostname and url.startswith("https://"):
+            return check_https_certificate(hostname)
+    except Exception:
+        pass
+    return []
+
 def check_authentication_headers(msg, findings):
     """
     Modern email servers add authentication headers that reveal
@@ -380,8 +501,14 @@ def get_risk_label(score):
 def run_phishing_analysis(raw_email):
     """
     Master function for phishing analysis.
+    Loads VirusTotal API key from .env file.
     Runs all checks in sequence and returns consolidated results.
     """
+    import os
+    from dotenv import load_dotenv
+    load_dotenv()
+    vt_api_key = os.getenv("VIRUSTOTAL_API_KEY", "")
+
     print(f"\n{Fore.CYAN}{'='*60}")
     print(f"  SECURECHECK — Phishing Email Analyzer")
     print(f"{'='*60}{Style.RESET_ALL}\n")
@@ -392,10 +519,57 @@ def run_phishing_analysis(raw_email):
     if not msg:
         return {"error": "Could not parse email", "findings": [], "score": 0}
 
-    check_sender_mismatch(msg, findings)
+    from_domain = check_sender_mismatch(msg, findings)
     check_subject_urgency(msg, findings)
-    check_body_content(raw_email, findings)
     check_authentication_headers(msg, findings)
+
+    # Extract URLs and run full analysis per URL
+    url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
+    urls = list(set(re.findall(url_pattern, raw_email)))
+
+    if urls:
+        print(f"\n{Fore.CYAN}[*] Found {len(urls)} URL(s) — running full analysis...{Style.RESET_ALL}")
+        for url in urls[:5]:  # Cap at 5 URLs to respect rate limits
+            check_url(url, findings)
+
+            # HTTPS cert validation
+            if url.startswith("https://"):
+                print(f"    {Fore.CYAN}[*] Checking TLS certificate...{Style.RESET_ALL}")
+                cert_findings = check_cert_for_url(url)
+                findings.extend(cert_findings)
+
+            # VirusTotal
+            if vt_api_key:
+                print(f"    {Fore.CYAN}[*] Checking VirusTotal...{Style.RESET_ALL}")
+                vt_findings = check_virustotal(url, vt_api_key)
+                if vt_findings:
+                    findings.extend(vt_findings)
+            else:
+                print(f"    {Fore.YELLOW}[!] No VirusTotal API key — skipping VT check{Style.RESET_ALL}")
+    else:
+        print_finding(INFO, "No URLs found in email body")
+
+    # Body urgency scan
+    body_lower = raw_email.lower()
+    matched_body = [p for p in URGENCY_PHRASES if p in body_lower]
+    if matched_body:
+        findings.append({
+            "check": "Urgency Language in Body",
+            "risk": MEDIUM,
+            "explanation": f"Body contains pressure language: {', '.join(matched_body[:3])}{'...' if len(matched_body) > 3 else ''}",
+        })
+        print_finding(MEDIUM, f"Body urgency phrases: {', '.join(matched_body[:3])}")
+
+    # HIBP check on sender
+    if from_domain:
+        from modules.audit import check_hibp_email
+        sender_addr = str(msg.get("From", ""))
+        import re as _re
+        email_match = _re.search(r'[\w\.\-\+]+@[\w\.\-]+', sender_addr)
+        if email_match:
+            print(f"\n{Fore.CYAN}[*] Checking sender against HaveIBeenPwned...{Style.RESET_ALL}")
+            hibp = check_hibp_email(email_match.group(0))
+            findings.extend(hibp)
 
     score = calculate_risk_score(findings)
     label, colour = get_risk_label(score)

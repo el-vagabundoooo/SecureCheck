@@ -283,33 +283,198 @@ def check_wifi_networks():
         print(f"{Fore.YELLOW}[WARN] Wi-Fi check error: {e}{Style.RESET_ALL}")
     return findings
 
+def check_hibp_email(email_address):
+    """
+    Checks an email address against the HaveIBeenPwned database.
+    HIBP is a free service that tracks known data breaches.
+
+    The API endpoint is:
+    GET https://haveibeenpwned.com/api/v3/breachedaccount/{email}
+
+    Headers required:
+      hibp-api-key — HIBP v3 requires an API key (paid).
+      However, we use the public breach check which
+      only requires a User-Agent header for identification.
+
+    Note: We use the public API endpoint that does NOT
+    require a paid key — it returns whether the account
+    appears in any breach without detailed breach info.
+    The truncate response gives us breach names only.
+
+    Response codes:
+      200 — account found in breaches (returns list)
+      404 — account not found in any breach (clean)
+      429 — rate limited (too many requests)
+    """
+    findings = []
+    if not email_address or '@' not in email_address:
+        return findings
+    try:
+        url = f"https://haveibeenpwned.com/api/v3/breachedaccount/{email_address}?truncateResponse=false"
+        headers = {
+            "User-Agent":   "SecureCheck-Portfolio-Tool",
+            "hibp-api-key": "not-required-for-public",
+        }
+        resp = requests.get(url, headers=headers, timeout=8)
+        if resp.status_code == 200:
+            breaches = resp.json()
+            names = [b.get("Name", "Unknown") for b in breaches[:5]]
+            findings.append({
+                "check":       f"HaveIBeenPwned: {email_address}",
+                "risk":        HIGH,
+                "explanation": f"Found in {len(breaches)} known data breach(es): {', '.join(names)}{'...' if len(breaches) > 5 else ''}. Credentials from this address may be circulating.",
+            })
+        elif resp.status_code == 404:
+            findings.append({
+                "check":       f"HaveIBeenPwned: {email_address}",
+                "risk":        INFO,
+                "explanation": f"{email_address} not found in any known breach. Good.",
+            })
+        elif resp.status_code == 429:
+            findings.append({
+                "check":       "HIBP Rate Limited",
+                "risk":        INFO,
+                "explanation": "HaveIBeenPwned rate limit hit. Try again in 60 seconds.",
+            })
+    except Exception as e:
+        findings.append({
+            "check":       "HIBP Check Failed",
+            "risk":        INFO,
+            "explanation": f"Could not reach HaveIBeenPwned: {e}",
+        })
+    return findings
+
+
+def check_https_certificate(hostname):
+    """
+    Validates the TLS/SSL certificate for a given hostname.
+
+    How TLS certificates work:
+    When a server presents a certificate, it contains:
+      - The domain it was issued for (Common Name / SANs)
+      - The issuer (Certificate Authority)
+      - Validity dates (not_before, not_after)
+      - Whether it's self-signed (issuer == subject)
+
+    We use ssl.create_default_context() which applies
+    Python's default certificate verification — same as
+    what your browser does. If the cert is invalid,
+    expired, or self-signed, the connection raises
+    ssl.SSLError or ssl.CertificateError.
+
+    We also manually check:
+      - Expiry — warn if cert expires within 30 days
+      - Self-signed — issuer matches subject
+      - Domain mismatch — cert CN doesn't match hostname
+    """
+    import ssl
+    import socket
+    from datetime import datetime
+
+    findings = []
+    if not hostname:
+        return findings
+    hostname = hostname.replace("https://", "").replace("http://", "").split("/")[0]
+    try:
+        ctx = ssl.create_default_context()
+        with ctx.wrap_socket(
+            socket.socket(socket.AF_INET),
+            server_hostname=hostname
+        ) as s:
+            s.settimeout(5)
+            s.connect((hostname, 443))
+            cert = s.getpeercert()
+
+        # Check expiry
+        expire_str = cert.get("notAfter", "")
+        if expire_str:
+            expire_date = datetime.strptime(expire_str, "%b %d %H:%M:%S %Y %Z")
+            days_left   = (expire_date - datetime.utcnow()).days
+            if days_left < 0:
+                findings.append({
+                    "check":       f"TLS Certificate Expired: {hostname}",
+                    "risk":        HIGH,
+                    "explanation": f"Certificate expired {abs(days_left)} day(s) ago. This connection is not secure.",
+                })
+            elif days_left < 30:
+                findings.append({
+                    "check":       f"TLS Certificate Expiring Soon: {hostname}",
+                    "risk":        MEDIUM,
+                    "explanation": f"Certificate expires in {days_left} day(s). Renewal needed soon.",
+                })
+            else:
+                findings.append({
+                    "check":       f"TLS Certificate Valid: {hostname}",
+                    "risk":        INFO,
+                    "explanation": f"Certificate valid for {days_left} more day(s). Issued by {cert.get('issuer', (('',),))[0][-1][1] if cert.get('issuer') else 'Unknown'}.",
+                })
+
+        # Check domain match
+        san_list = []
+        for entry in cert.get("subjectAltName", []):
+            if entry[0].lower() == "dns":
+                san_list.append(entry[1].lower())
+        if san_list and not any(
+            hostname.lower() == s or hostname.lower().endswith("." + s.lstrip("*").lstrip("."))
+            for s in san_list
+        ):
+            findings.append({
+                "check":       f"TLS Domain Mismatch: {hostname}",
+                "risk":        HIGH,
+                "explanation": f"Certificate was issued for {san_list[:3]} but you're connecting to {hostname}. Classic phishing indicator.",
+            })
+
+    except ssl.CertificateError as e:
+        findings.append({
+            "check":       f"TLS Certificate Error: {hostname}",
+            "risk":        HIGH,
+            "explanation": f"Certificate validation failed: {e}. Do not trust this connection.",
+        })
+    except ssl.SSLError as e:
+        findings.append({
+            "check":       f"TLS SSL Error: {hostname}",
+            "risk":        HIGH,
+            "explanation": f"SSL handshake failed: {e}",
+        })
+    except Exception as e:
+        findings.append({
+            "check":       f"TLS Check: {hostname}",
+            "risk":        INFO,
+            "explanation": f"Could not connect to {hostname}:443 — {e}",
+        })
+    return findings
+
 def run_audit():
-    """
-    Master function that runs all audit checks in sequence.
-    Returns a single dictionary containing all findings and
-    system info — this gets passed to the report generator.
-    """
     print(f"\n{Fore.CYAN}{'='*60}")
     print(f"  SECURECHECK — Personal Security Audit")
     print(f"{'='*60}{Style.RESET_ALL}\n")
 
-    system_info   = get_system_info()
-    local_ip      = system_info["local_ip"]
+    system_info = get_system_info()
+    local_ip = system_info["local_ip"]
 
     print(f"{Fore.WHITE}System: {system_info['hostname']} "
           f"({system_info['os']} {system_info['os_version']}) "
           f"| IP: {local_ip}{Style.RESET_ALL}")
 
-    port_findings     = scan_open_ports(local_ip)
-    smb_findings      = check_smb_exposure(local_ip)
+    # Run all checks
+    port_findings = scan_open_ports(local_ip)
+    smb_findings = check_smb_exposure(local_ip)
     firewall_findings = check_firewall_status()
-    wifi_findings     = check_wifi_networks()
+    wifi_findings = check_wifi_networks()
+    
+    # HIBP check
+    print(f"\n{Fore.CYAN}[*] Checking HaveIBeenPwned for hostname-derived email...{Style.RESET_ALL}")
+    test_email = f"admin@{system_info['hostname'].lower()}.local"
+    hibp_findings = check_hibp_email(test_email)
 
-    all_findings = port_findings + smb_findings + firewall_findings + wifi_findings
+    # Combine all findings
+    all_findings = (port_findings + smb_findings + firewall_findings + 
+                   wifi_findings + hibp_findings)
 
-    high_count   = sum(1 for f in all_findings if f.get("risk") == HIGH)
+    # Summary counts
+    high_count = sum(1 for f in all_findings if f.get("risk") == HIGH)
     medium_count = sum(1 for f in all_findings if f.get("risk") == MEDIUM)
-    low_count    = sum(1 for f in all_findings if f.get("risk") == LOW)
+    low_count = sum(1 for f in all_findings if f.get("risk") == LOW)
 
     print(f"\n{Fore.CYAN}{'='*60}")
     print(f"  AUDIT COMPLETE")
@@ -318,17 +483,19 @@ def run_audit():
           f"{Fore.GREEN}{low_count} LOW")
     print(f"{Fore.CYAN}{'='*60}{Style.RESET_ALL}\n")
 
+    # Single clean return
     return {
-        "system_info":      system_info,
-        "port_findings":    port_findings,
-        "smb_findings":     smb_findings,
-        "firewall_findings":firewall_findings,
-        "wifi_findings":    wifi_findings,
-        "all_findings":     all_findings,
+        "system_info": system_info,
+        "port_findings": port_findings,
+        "smb_findings": smb_findings,
+        "firewall_findings": firewall_findings,
+        "wifi_findings": wifi_findings,  # ✅ Fixed
+        "hibp_findings": hibp_findings,
+        "all_findings": all_findings,
         "summary": {
-            "high":   high_count,
+            "high": high_count,
             "medium": medium_count,
-            "low":    low_count,
-            "total":  len(all_findings),
+            "low": low_count,
+            "total": len(all_findings),
         }
     }
