@@ -24,26 +24,77 @@ RISK_COLOURS = {
 
 # ─── KNOWN DANGEROUS PORTS ──────────────────────────────────────────────────
 DANGEROUS_PORTS = {
+    # ── WELL-KNOWN PORTS (0–1023) ──────────────────────────────
     21:   ("FTP",              HIGH,   "Unencrypted file transfer. Credentials sent in plaintext."),
     22:   ("SSH",              MEDIUM, "Remote access. Acceptable if needed — ensure key-based auth only."),
     23:   ("Telnet",           HIGH,   "Completely unencrypted remote access. Should never be open."),
     25:   ("SMTP",             MEDIUM, "Mail server. Exposure may allow spam relay."),
     53:   ("DNS",              MEDIUM, "DNS server exposed. Verify this is intentional."),
+    69:   ("TFTP",             HIGH,   "Trivial File Transfer — no authentication whatsoever."),
     80:   ("HTTP",             LOW,    "Unencrypted web server. Consider HTTPS only."),
     110:  ("POP3",             MEDIUM, "Unencrypted email retrieval."),
+    111:  ("RPCbind",          HIGH,   "RPC portmapper. Exposes internal RPC services to network."),
+    119:  ("NNTP",             MEDIUM, "Network News Transfer — legacy, rarely needed."),
     135:  ("RPC",              HIGH,   "Windows RPC. Frequent target for exploitation."),
+    137:  ("NetBIOS-NS",       HIGH,   "NetBIOS Name Service. Exposes machine names to network."),
+    138:  ("NetBIOS-DGM",      HIGH,   "NetBIOS Datagram. Legacy Windows broadcast protocol."),
     139:  ("NetBIOS",          HIGH,   "Legacy Windows file sharing. Major attack surface."),
     143:  ("IMAP",             MEDIUM, "Unencrypted email access."),
+    161:  ("SNMP",             HIGH,   "Network management — often misconfigured with default community strings."),
+    179:  ("BGP",              HIGH,   "Border Gateway Protocol. Should never be exposed on endpoints."),
+    389:  ("LDAP",             MEDIUM, "Directory access. Unencrypted LDAP exposes directory queries."),
     443:  ("HTTPS",            INFO,   "Encrypted web server. Generally safe."),
     445:  ("SMB",              HIGH,   "Windows file sharing. Primary vector for ransomware spread."),
+    512:  ("rexec",            HIGH,   "Remote execution — no encryption, legacy Unix service."),
+    513:  ("rlogin",           HIGH,   "Remote login — no encryption, deprecated."),
+    514:  ("rsh/syslog",       HIGH,   "Remote shell or syslog. rsh has no authentication."),
+    587:  ("SMTP-Submit",      MEDIUM, "Mail submission port. Verify authentication is enforced."),
+    631:  ("IPP",              MEDIUM, "Internet Printing Protocol. Printer exposure."),
+    636:  ("LDAPS",            LOW,    "Encrypted LDAP. Generally acceptable if needed."),
+    873:  ("rsync",            HIGH,   "File sync — often misconfigured with no authentication."),
+    # ── REGISTERED PORTS (1024–49151) ──────────────────────────
+    1080: ("SOCKS Proxy",      HIGH,   "Proxy server. Often used to tunnel malicious traffic."),
+    1194: ("OpenVPN",          MEDIUM, "VPN service. Ensure up-to-date and properly configured."),
     1433: ("MSSQL",            HIGH,   "Microsoft SQL Server. Should never be publicly exposed."),
-    1900: ("UPnP",             HIGH,   "Universal Plug and Play. Frequently exploited for amplification attacks."),
+    1434: ("MSSQL-UDP",        HIGH,   "MSSQL Browser service. Exposes instance information."),
+    1521: ("Oracle DB",        HIGH,   "Oracle database. Should never be publicly exposed."),
+    1723: ("PPTP VPN",         HIGH,   "PPTP VPN — broken encryption, deprecated protocol."),
+    1883: ("MQTT",             HIGH,   "IoT messaging protocol — often deployed with no authentication."),
+    1900: ("UPnP",             HIGH,   "Universal Plug and Play. Frequently exploited for amplification."),
+    2049: ("NFS",              HIGH,   "Network File System. Misconfigured NFS exposes entire filesystems."),
+    2121: ("FTP-Alt",          HIGH,   "Alternate FTP port. Same risks as port 21."),
+    2181: ("ZooKeeper",        HIGH,   "Distributed coordination — should never be publicly exposed."),
+    2375: ("Docker HTTP",      HIGH,   "Unencrypted Docker API. Full container control if exposed."),
+    2376: ("Docker HTTPS",     MEDIUM, "Encrypted Docker API. Verify certificate authentication."),
+    3000: ("Dev Server",       LOW,    "Common development server port. Should not be in production."),
     3306: ("MySQL",            HIGH,   "Database port. Should never be publicly exposed."),
     3389: ("RDP",              HIGH,   "Remote Desktop. Primary brute-force target on Windows."),
+    3690: ("SVN",              MEDIUM, "Subversion repository. Verify access controls."),
+    4444: ("Metasploit",       HIGH,   "Default Metasploit listener port. Presence is highly suspicious."),
+    4848: ("GlassFish Admin",  HIGH,   "Application server admin panel. Should never be public."),
+    5000: ("Flask/UPnP",       MEDIUM, "Common dev server or UPnP. Verify what is running here."),
+    5432: ("PostgreSQL",       HIGH,   "Database port. Should never be publicly exposed."),
+    5601: ("Kibana",           HIGH,   "Log analytics UI — exposes sensitive log data if public."),
+    5672: ("RabbitMQ",         HIGH,   "Message broker. Should never be publicly exposed."),
     5900: ("VNC",              HIGH,   "Remote desktop. Often misconfigured with weak passwords."),
+    5984: ("CouchDB",          HIGH,   "Database with HTTP API — frequently found exposed."),
+    6379: ("Redis",            HIGH,   "In-memory database. Frequently found with no authentication."),
+    6443: ("Kubernetes API",   HIGH,   "Kubernetes control plane. Critical exposure if public."),
+    7001: ("WebLogic",         HIGH,   "Oracle WebLogic admin. Frequent RCE vulnerability target."),
+    7077: ("Spark Master",     HIGH,   "Apache Spark cluster. Should never be publicly exposed."),
     8080: ("HTTP-Alt",         LOW,    "Alternate web port. Verify what is serving here."),
     8443: ("HTTPS-Alt",        LOW,    "Alternate HTTPS port."),
+    8888: ("Jupyter",          HIGH,   "Jupyter Notebook — often deployed with no password, full code execution."),
+    9000: ("SonarQube/PHP",    MEDIUM, "Dev tooling or PHP-FPM. Verify access controls."),
+    9090: ("Prometheus",       HIGH,   "Metrics server — exposes internal system data."),
+    9092: ("Kafka",            HIGH,   "Message streaming. Should never be publicly exposed."),
+    9200: ("Elasticsearch",    HIGH,   "Search engine with HTTP API — frequently found with no auth."),
+    9300: ("Elasticsearch",    HIGH,   "Elasticsearch cluster port. Internal use only."),
+    11211:("Memcached",        HIGH,   "Caching service — no authentication, amplification attack vector."),
     27017:("MongoDB",          HIGH,   "Database port. Frequently found exposed with no authentication."),
+    27018:("MongoDB-Shard",    HIGH,   "MongoDB sharding port. Same risks as 27017."),
+    50000:("SAP",              HIGH,   "SAP application server. Sensitive enterprise data exposure."),
+    50070:("Hadoop NameNode",  HIGH,   "Hadoop web UI — exposes cluster management if public."),
 }
 
 def print_finding(risk, message):
@@ -83,7 +134,7 @@ def get_system_info():
         "scan_time":    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
 
-def scan_open_ports(target_ip, port_range="1-1024"):
+def scan_open_ports(target_ip, port_range="1-65535"):
     """
     Uses nmap to scan the target IP for open ports within the given range.
 

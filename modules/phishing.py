@@ -414,6 +414,95 @@ def check_cert_for_url(url):
         pass
     return []
 
+def check_attachments(msg, findings):
+    """
+    Inspects MIME parts of an email for suspicious attachment types.
+
+    Modern emails are structured as MIME (Multipurpose Internet
+    Mail Extensions) — a standard that allows emails to contain
+    multiple parts: plain text, HTML, images, attachments.
+
+    msg.walk() iterates through every MIME part recursively.
+    get_content_disposition() returns 'attachment' for files
+    that are meant to be downloaded, vs 'inline' for embedded
+    content like images.
+
+    get_filename() extracts the attachment filename.
+    We check the extension against known dangerous types:
+
+    Executable types (.exe, .bat, .cmd, .ps1, .vbs, .js):
+      Directly executable — opening runs malicious code.
+
+    Archive types (.zip, .rar, .7z, .iso):
+      Often used to bypass email filters that block executables.
+      The archive contains the malicious executable inside.
+
+    Document macros (.doc, .xls, .ppt — old Office formats):
+      Legacy Office formats support VBA macros — malicious macros
+      auto-execute on open. .docx/.xlsx are safer (XML-based).
+
+    Script types (.hta, .wsf, .scr):
+      Windows-specific script runners that bypass security warnings.
+    """
+    DANGEROUS_EXTENSIONS = {
+        # Directly executable
+        ".exe":  (HIGH,   "Executable file — should never arrive via email."),
+        ".bat":  (HIGH,   "Windows batch script — executes shell commands on open."),
+        ".cmd":  (HIGH,   "Windows command script — same risk as .bat."),
+        ".com":  (HIGH,   "Legacy DOS executable."),
+        ".ps1":  (HIGH,   "PowerShell script — full system access on execution."),
+        ".vbs":  (HIGH,   "VBScript — executes Windows Scripting Host commands."),
+        ".js":   (HIGH,   "JavaScript — can execute via Windows Script Host."),
+        ".jar":  (HIGH,   "Java executable — runs with Java runtime permissions."),
+        ".msi":  (HIGH,   "Windows installer — installs software silently."),
+        # Archive wrappers
+        ".zip":  (MEDIUM, "Archive file — may contain executable payloads."),
+        ".rar":  (MEDIUM, "Archive file — may contain executable payloads."),
+        ".7z":   (MEDIUM, "Archive file — may contain executable payloads."),
+        ".iso":  (MEDIUM, "Disk image — can auto-mount and execute content on Windows 10+."),
+        ".gz":   (MEDIUM, "Compressed archive — verify contents before extracting."),
+        # Legacy Office formats (macro-capable)
+        ".doc":  (HIGH,   "Legacy Word format — supports VBA macros that auto-execute."),
+        ".xls":  (HIGH,   "Legacy Excel format — supports VBA macros that auto-execute."),
+        ".ppt":  (HIGH,   "Legacy PowerPoint format — macro-capable."),
+        ".dot":  (HIGH,   "Word template — macro-capable."),
+        # Script runners
+        ".hta":  (HIGH,   "HTML Application — executes with full system privileges."),
+        ".wsf":  (HIGH,   "Windows Script File — multi-language script executor."),
+        ".scr":  (HIGH,   "Screen saver file — executable format disguised as media."),
+        ".lnk":  (HIGH,   "Windows shortcut — can point to malicious executables."),
+        # Safe-ish but worth noting
+        ".pdf":  (LOW,    "PDF file — verify it is from expected sender before opening."),
+        ".docx": (LOW,    "Modern Word format — macro-free by default but verify sender."),
+        ".xlsx": (LOW,    "Modern Excel format — macro-free by default but verify sender."),
+    }
+
+    print(f"\n{Fore.CYAN}[*] Checking email attachments...{Style.RESET_ALL}")
+    attachment_count = 0
+
+    for part in msg.walk():
+        content_disposition = str(part.get_content_disposition() or "")
+        if "attachment" in content_disposition:
+            filename = part.get_filename()
+            if filename:
+                attachment_count += 1
+                _, ext = os.path.splitext(filename.lower())
+                if ext in DANGEROUS_EXTENSIONS:
+                    risk, explanation = DANGEROUS_EXTENSIONS[ext]
+                    findings.append({
+                        "check":       f"Suspicious Attachment: {filename}",
+                        "risk":        risk,
+                        "explanation": explanation,
+                    })
+                    print_finding(risk, f"Attachment: {filename} — {explanation}")
+                else:
+                    print_finding(INFO, f"Attachment: {filename} — no known risk")
+
+    if attachment_count == 0:
+        print_finding(INFO, "No attachments detected")
+
+    return findings
+
 def check_authentication_headers(msg, findings):
     """
     Modern email servers add authentication headers that reveal
@@ -520,6 +609,7 @@ def run_phishing_analysis(raw_email):
         return {"error": "Could not parse email", "findings": [], "score": 0}
 
     from_domain = check_sender_mismatch(msg, findings)
+    check_attachments(msg, findings)
     check_subject_urgency(msg, findings)
     check_authentication_headers(msg, findings)
 

@@ -929,10 +929,22 @@ class SecureCheckApp(ctk.CTk):
 
         ctk.CTkButton(
             btn_frame,
-            text="📂  Open Full HTML Report",
+            text="📂  Open HTML Report",
             command=lambda: webbrowser.open(
                 f"file:///{os.path.abspath(filepath)}"),
             fg_color=ACCENT_BLUE, hover_color=ACCENT_DARK,
+            font=ctk.CTkFont(family="Arial", size=13, weight="bold"),
+            height=44, corner_radius=8
+        ).pack(side="left", padx=(0, 8))
+
+        ctk.CTkButton(
+            btn_frame,
+            text="📄  Export PDF",
+            command=lambda: self._export_pdf(
+                audit_data=audit_data,
+                phishing_data=phishing_data
+            ),
+            fg_color="#1a8c5a", hover_color="#0d5a3a",
             font=ctk.CTkFont(family="Arial", size=13, weight="bold"),
             height=44, corner_radius=8
         ).pack(side="left", padx=(0, 8))
@@ -944,6 +956,23 @@ class SecureCheckApp(ctk.CTk):
             font=ctk.CTkFont(family="Arial", size=13),
             height=44, width=100, corner_radius=8
         ).pack(side="left")
+
+    def _export_pdf(self, audit_data=None, phishing_data=None):
+        """
+        Calls the PDF generator and opens the result.
+        Runs on the main thread — reportlab is fast enough
+        that threading is not needed here.
+        """
+        try:
+            from modules.report import generate_pdf_report
+            pdf_path = generate_pdf_report(
+                audit_data=audit_data,
+                phishing_data=phishing_data
+            )
+            abs_path = os.path.abspath(pdf_path)
+            os.startfile(abs_path)
+        except Exception as e:
+            messagebox.showerror("PDF Export Failed", str(e))
 
     def _render_finding_card(self, parent, finding, row_idx):
         """
